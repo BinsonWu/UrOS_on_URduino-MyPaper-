@@ -6,7 +6,6 @@
  */
 
 #include "UrOSInclude.h"
-//#include "URduino_API.h"
 #include "comm.h"
 #include "portmacro.h"
 
@@ -216,6 +215,12 @@ UrSchedUnlock();
 	return E_CREATE_FAIL;               /* No free mutex control block        */
 }
 
+/*
+UrDelTask()
+------------------------------------------------------------
+1. Task state is TASK_READY or TASK_RUNNING or TASK_WAITING.
+2. If task wait an Event.
+*/
 StatusType UrDelTask(OS_ID id)
 {
     if(id >= CFG_MAX_TASK)
@@ -225,8 +230,35 @@ StatusType UrDelTask(OS_ID id)
 UrSchedLock();
 UrTaskLock();
     P_TASK tempTask = getTaskByID(id);
-    RemoveFromTaskRdyList(tempTask);
-	UrKFree(tempTask->stackStart);
+	// Remove from Ready Queue
+	if(tempTask->state == TASK_READY)
+		RemoveFromTaskRdyList(tempTask);
+	// Remove from Delay Queue
+	else if(tempTask->state == TASK_WAITING)
+		RemoveFromTaskDlyList(tempTask);
+	// Task wait an event.
+	if(tempTask->eventType != INVALID_TYPE)
+	{
+		switch( tempTask->eventType )   
+		{  
+			case EVENT_TYPE_SEM:  
+				UrRemoveTaskFromSemWaiting(tempTask);
+				break;
+			case EVENT_TYPE_MUTEX:  
+				UrRemoveTaskFromMutexWaiting(tempTask);
+				break;
+			case EVENT_TYPE_QUEUE:  
+				break;
+			case EVENT_TYPE_MAILBOX:  
+				break;
+			case EVENT_TYPE_FLAG:  
+				break;
+			default :  
+				break; 
+		}  
+		
+	}
+	
 	tempTask->stkPtr 			= Ur_NULL;                		/*!< The current point of task.       */
 	tempTask->prio 				= INVALID_Prio;                 /*!< Task priority.                   */
 	tempTask->state 			= TASK_DORMANT;        			/*!< TaSk status.                     */
@@ -242,6 +274,7 @@ UrTaskLock();
 	tempTask->Tasknext			= Ur_NULL;               		/*!< The pointer to next Task.         */
 	tempTask->Taskprev			= Ur_NULL;               		/*!< The pointer to prev Task.         */
 	tempTask->nextWaiting		= Ur_NULL;
+	
 UrTaskUnlock();
 UrSchedUnlock();
 	return E_OK;
@@ -362,13 +395,17 @@ InsertToTaskDlyList()
 
 void  InsertToTaskDlyList  (U32 timeout)
 {
+	if(timeout == 0)
+		return;
+	
 	TaskRunning->state 		= TASK_WAITING;
 	TaskRunning->delayTick 	= timeout;
-	TaskRunning->wakeTick	= OSTickCnt + timeout;
+	TaskRunning->wakeTick	= getCoreTick() + timeout;
 	P_TASK tempTask = getTaskDly();
 	P_TASK prevTempTask;
+	
 	// 1. Delay Queue is NULL.
-	if( tempTask == 0)
+	if( tempTask == Ur_NULL)
 	{
 		setTaskDly( (U32)TaskRunning );
 		return;
@@ -477,36 +514,68 @@ void  RemoveFromTaskDlyList(P_TASK ptcb)
 	ptcb->wakeTick 	= 0;			// Initial Wake Tick
 }
 
-P_TASK  EventTaskToWait(OS_ID eventID,OS_ID eventType,P_TASK eventTaskList)
+
+/*
+EventTaskToWait()
+------------------------------------------------------------
+1. Waiting List is NULL.
+2. 
+*/
+P_TASK  EventTaskToWait(OS_ID eventID,OS_ID eventType,U8 eventSortType,P_TASK eventTaskList)
 {
 		TaskRunning->eventID 		= eventID;
-		TaskRunning->eventType	= eventType;
+		TaskRunning->eventType		= eventType;
+		TaskRunning->state			= TASK_WAITING;
 		if(eventTaskList == Ur_NULL)
 		{
 			return TaskRunning;
 		}
-		else
+		P_TASK tempTask = eventTaskList;
+		// Sort by FIFO
+		if( eventSortType == EVENT_SORT_TYPE_FIFO )
 		{
-			P_TASK tempTask = TaskRunning;
 			while(tempTask->nextWaiting)
 			{
 				tempTask = tempTask->nextWaiting;
 			}
 			tempTask->nextWaiting = TaskRunning;
+			
+			return eventTaskList;
 		}
-		return eventTaskList;
+		// Sort by Priority
+		if( eventSortType == EVENT_SORT_TYPE_PRIO )
+		{
+			if( TaskRunning->prio < eventTaskList->prio )
+			{
+				TaskRunning->nextWaiting = eventTaskList;
+				return TaskRunning;
+			}
+			while(tempTask->nextWaiting)
+			{
+				if( TaskRunning->prio < tempTask->nextWaiting->prio )
+					break;
+			}
+			if(tempTask->nextWaiting != Ur_NULL)
+			{
+				TaskRunning->nextWaiting = tempTask->nextWaiting;
+			}
+			tempTask->nextWaiting = TaskRunning;
+			return eventTaskList;
+		}
+		
 }
 
 P_TASK  EventTaskAwake(P_TASK eventTaskList)
 {
-	P_TASK newEventTaskList = eventTaskList->nextWaiting;
-	eventTaskList->eventID 			= INVALID_ID;
-	eventTaskList->eventType 		= INVALID_TYPE;
+	P_TASK newEventTaskList 	= eventTaskList->nextWaiting;
+	eventTaskList->eventID 		= INVALID_ID;
+	eventTaskList->eventType 	= INVALID_TYPE;
+	eventTaskList->state		= TASK_READY;
 	eventTaskList->nextWaiting 	= Ur_NULL;
 	return newEventTaskList;
 }
 
-void    UrTaskTimeDispose(void)     /*!< Time dispose function.               */
+void UrTaskTimeDispose(void)     /*!< Time dispose function.               */
 {
 	P_TASK tempTask = getTaskDly();
 	P_TASK nextTask;
@@ -516,7 +585,7 @@ void    UrTaskTimeDispose(void)     /*!< Time dispose function.               */
 		if(tempTask->wakeTick == INVALID_TICK)
 			break;
 		
-		if(OSTickCnt < tempTask->wakeTick)
+		if(getCoreTick() < tempTask->wakeTick)
 			break;
 		
 		// Delay Task Finish , Resume Task.
@@ -570,6 +639,21 @@ UrTaskLock();
 	{
 		printh((U32)DlyList);
 		DlyList = DlyList->Tasknext;
+	}
+	println("");
+UrTaskUnlock();
+UrSchedUnlock();
+}
+
+void printWaitList(P_TASK WaitList)
+{
+UrSchedLock();
+UrTaskLock();
+	println(">> printWaitList");
+	while(WaitList != Ur_NULL)
+	{
+		printh((U32)WaitList);
+		WaitList = WaitList->nextWaiting;
 	}
 	println("");
 UrTaskUnlock();

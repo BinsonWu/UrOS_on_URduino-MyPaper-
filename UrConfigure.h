@@ -16,8 +16,9 @@ extern "C" {
 
 /*--- Shared Memmory ---*/
 // Enable
-#define CFG_SEM_EN              			(0)
-#define CFG_MUTEX_EN              			(0)
+#define CFG_DEBUG_EN              			(1)
+#define CFG_SEM_EN              			(1)
+#define CFG_MUTEX_EN              			(1)
 #define CFG_QUEUE_EN              			(0)
 #define CFG_MAILBOX_EN              		(0)
 #define CFG_FLAG_EN  	            		(0)
@@ -92,7 +93,10 @@ OS_DEF_END 			0x48BD0
 #define SHARED_BASE							(0x38004)	
 #define SHARED_BASE_CPUFLAG					SHARED_BASE								// 4  bit 0x38000
 
-#define SHARED_BASE_LOCK 					(SHARED_BASE_CPUFLAG			+ 4	)	// 32 bit 0x38004
+#define SHARED_BASE_CORE0TICK				(SHARED_BASE 					+ 4)
+#define SHARED_BASE_CORE1TICK				(SHARED_BASE_CORE0TICK 			+ 8)
+
+#define SHARED_BASE_LOCK 					(SHARED_BASE_CORE1TICK			+ 8	)	// 32 bit 0x38004
 #define SHARED_BASE_TASK					(SHARED_BASE_LOCK				+ 4	)	// 0x38008
 #define SHARED_BASE_TASKRDY					(SHARED_BASE_TASK 				+ (SHARED_SIZE_TASK		* CFG_MAX_TASK)		)
 #define SHARED_BASE_TASKRDY_PRIO_HEAD		(SHARED_BASE_TASKRDY			+ SHARED_SIZE_PTASK							)

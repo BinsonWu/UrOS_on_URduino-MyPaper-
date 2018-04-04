@@ -12,24 +12,27 @@
 extern "C" {
 #endif
 
-/*---------------------------- Resource status -------------------------------*/
-#define   MUTEX_FREE        0           /*!< Mutex is free                    */
-#define   MUTEX_OCCUPY      1           /*!< Mutex is occupy                  */
-#define   WAITING_MUTEX     0x80
 
 // Mutex
 typedef struct Mutex
 {
-	U8		exist;
-    U8       originalPrio;              /*!< Mutex priority.                  */
-    U8       mutexFlag;                 /*!< Mutex flag.                      */
-    OS_ID   taskID;                    /*!< Task ID.                         */
-    OS_ID   hipriTaskID;               /*!< Mutex ID.                        */
-    P_TASK  waittingList;              /*!< waitting the Mutex.              */
+	U8 			id;
+	OS_ID		ownTaskID;
+    U8       	flag;               			/*!< Mutex flag.                      */
+    P_TASK  	eventTaskList;              	/*!< waitting the Mutex.              */
+	SPINLOCK	lock;
 }MUTEX,*P_MUTEX;
 
 /*---------------------------- Function declare ------------------------------*/
 extern void   RemoveMutexList(P_TASK ptcb);
+
+extern P_MUTEX 		getMutexByID(OS_ID mutexID);
+extern void 		UrInitMutex();
+extern OS_ID 		UrCreateMutex();
+extern StatusType 	UrDeleteMutex(OS_ID mutexID,U8 opt);
+extern StatusType 	UrEnterMutexSection(OS_ID mutexID);
+extern StatusType 	UrLeaveMutexSection(OS_ID mutexID);
+extern void 		UrRemoveTaskFromMutexWaiting(P_TASK removeTask);
 
 
 #ifdef __cplusplus

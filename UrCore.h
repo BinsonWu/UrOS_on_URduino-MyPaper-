@@ -15,8 +15,6 @@ extern "C" {
 extern volatile int core_id;
 extern volatile U8 OSSchedLock;
 
-extern void 	UrSetCoreID(int id);
-extern int   	UrGetCoreID();
 extern void 	UrSetCoreFlag(U32 nextCPU);
 extern U32  	UrGetCoreFlag();
 
@@ -27,7 +25,6 @@ extern void 	printSharedBase(void);
 extern void 	UrConfigureSharedInit(void);
 extern void 	UrInitOS(void);
 extern void 	UrStartOS(void);
-extern U8 		UrGetSchedLock(void);
 
 #ifdef __cplusplus
 }

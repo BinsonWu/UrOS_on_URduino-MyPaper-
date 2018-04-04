@@ -19,6 +19,7 @@ extern "C" {
 #include "portable.h"
 #include "spr_defs.h"
 #include "support.h"
+#include "UrSpinlock.h"
 #include "UrArch.h"
 #include "UrCore.h"
 #include "UrSharedHeap.h"
@@ -28,6 +29,7 @@ extern "C" {
 #include "UrMailBox.h"
 #include "UrQueue.h"
 #include "UrFlag.h"
+#include "UrDebug.h"
 
 
 #ifdef __cplusplus

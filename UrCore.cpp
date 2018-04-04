@@ -15,16 +15,6 @@ volatile int core_id = -1;
 /*---------------------------- Variable Define -------------------------------*/
 volatile U8 OSSchedLock   = 1;         /*!< Task Switch lock.                      */
 
-void UrSetCoreID(int id)
-{
-	core_id = id;
-}
-
-int UrGetCoreID()
-{
-	return core_id;
-}
-
 void UrSetCoreFlag(U32 nextCPU)
 {
 	U32 *p = SHARED_BASE_CPUFLAG;
@@ -145,10 +135,10 @@ void UrInitOS(void)
 {
 	println(">> UrInitOS");
 	println("");
-	UrSetCoreID(0);
+	core_id = 0;
 	UrConfigureSharedInit();
 	UrInitTask();
-/*
+
 #if CFG_SEM_EN >0
 	UrInitSem();
 #endif
@@ -164,7 +154,7 @@ void UrInitOS(void)
 #if CFG_FLAG_EN >0
 	UrInitFlag();
 #endif
-*/
+
 }
 
 void UrStartOS(void)
@@ -191,7 +181,7 @@ UrTaskUnlock();
 	RemoveFromTaskRdyList(newTask);
 	newTask->state 	= TASK_RUNNING;
 	TaskRunning 	= newTask;
-	OSScheduleTime 	= OSTickCnt + TaskRunning->timeSlice;
+	OSScheduleTime 	= TaskRunning->timeSlice;
 UrTaskUnlock();
 	
 	if(core_id == 0)
@@ -222,7 +212,4 @@ UrTaskUnlock();
 	}
 }
 
-U8 UrGetSchedLock(void)
-{
-	return OSSchedLock;
-}
+
