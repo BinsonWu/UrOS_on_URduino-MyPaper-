@@ -11,7 +11,8 @@
 
 /*---------------------------- Variable declare ------------------------------*/
 // save tcb ptr that created
-volatile P_TASK TaskRunning 	= Ur_NULL;   /*!< A pointer to Task that is running.          */
+volatile P_TASK TaskRunning 	= Ur_NULL;   /*!< A pointer to Task that is running.          				*/
+volatile P_TASK TaskWakeUp 		= Ur_NULL;   /*!< A pointer to next Task that waked up by event.          	*/
 volatile U8 TaskSchedReq 		= Ur_FALSE;
 
 int __attribute__ ((section (".TASKCODE"))) TaskStack[CFG_MAX_TASK][CFG_STACK_SIZE];
@@ -37,6 +38,9 @@ void IdleTask2()
 /*
 					< UrTask Architecture >
 ---------------------------------------------------------------
+- Task Array
+	Length : CFG_MAX_TASK
+	|  0  | , |  1  | , ... , |  CFG_MAX_TASK-1  |
 - TaskRunning
 - TaskSchedReq
 - Ready Queue : |    | -> |    | -> ... -> |    | -> |    | 
@@ -57,7 +61,7 @@ void IdleTask2()
 	255 | End of Queue 255	|
 */
 
-P_TASK getTaskByID(OS_ID id)
+P_TASK UrGetTaskByID(OS_ID id)
 {
 	U32 *p = SHARED_BASE_TASK;
 	P_TASK tempTask;
@@ -151,7 +155,7 @@ void UrInitTask()
 	// Init Task
 	for(i=0;i<CFG_MAX_TASK;i++)
 	{
-		tempTask = getTaskByID(i);		
+		tempTask = UrGetTaskByID(i);		
 		tempTask->stkPtr 			= Ur_NULL;              /*!< The current point of task.       						*/
 		tempTask->prio 				= INVALID_Prio;         /*!< Task priority.                   						*/
 		tempTask->state 			= TASK_DORMANT;         /*!< TaSk status.                     						*/
@@ -164,18 +168,27 @@ void UrInitTask()
 		tempTask->delayTick			= 0;         			/*!< The number of ticks which delay. 						*/
 		tempTask->wakeTick			= 0;         			/*!< The number of ticks which delay. 						*/
 		tempTask->timeSlice			= CFG_TIME_SLICE;		/*!< When Round Robin , How many tick to Context Switch.	*/
+		
+#if CFG_FLAG_EN > 0
+		tempTask->taskFlagID		= i;
+#endif 
+		
 		tempTask->Tasknext			= Ur_NULL;             	/*!< The pointer to next Task.         						*/
 		tempTask->Taskprev			= Ur_NULL;              /*!< The pointer to prev Task.         						*/
 		tempTask->nextWaiting		= Ur_NULL;
 	}
-	UrCreateTask(IdleTask1,0,INVALID_Prio-1,50);
-	UrCreateTask(IdleTask2,0,INVALID_Prio-1,50);
+	//UrCreateTask(IdleTask1,0,INVALID_Prio-1,50);
+	//UrCreateTask(IdleTask2,0,INVALID_Prio-1,50);
 
 	println("");
 }
 
 OS_ID UrCreateTask(FUNCPtr task,void *argv,U8 prio,U32 timeSlice)
 {
+	if(UrGetCoreID()!=0)
+	{
+		return ;
+	}
 	P_TASK tempTask;
 	OS_STK *TopOfStack;
 	OS_ID i;
@@ -183,7 +196,7 @@ UrSchedLock();
 UrTaskLock();
 	for(i=0;i<CFG_MAX_TASK;i++)
 	{
-		tempTask = getTaskByID(i);
+		tempTask = UrGetTaskByID(i);
 		if(tempTask->taskID == INVALID_ID)
 		{
 			tempTask->taskID 			= i;
@@ -229,7 +242,7 @@ StatusType UrDelTask(OS_ID id)
     }
 UrSchedLock();
 UrTaskLock();
-    P_TASK tempTask = getTaskByID(id);
+    P_TASK tempTask = UrGetTaskByID(id);
 	// Remove from Ready Queue
 	if(tempTask->state == TASK_READY)
 		RemoveFromTaskRdyList(tempTask);
@@ -247,11 +260,11 @@ UrTaskLock();
 			case EVENT_TYPE_MUTEX:  
 				UrRemoveTaskFromMutexWaiting(tempTask);
 				break;
-			case EVENT_TYPE_QUEUE:  
-				break;
 			case EVENT_TYPE_MAILBOX:  
+				UrRemoveTaskFromMailboxWaiting(tempTask);
 				break;
 			case EVENT_TYPE_FLAG:  
+				UrRemoveTaskFromFlagWaiting(tempTask);
 				break;
 			default :  
 				break; 
@@ -400,7 +413,7 @@ void  InsertToTaskDlyList  (U32 timeout)
 	
 	TaskRunning->state 		= TASK_WAITING;
 	TaskRunning->delayTick 	= timeout;
-	TaskRunning->wakeTick	= getCoreTick() + timeout;
+	TaskRunning->wakeTick	= UrGetOSTickCnt() + timeout;
 	P_TASK tempTask = getTaskDly();
 	P_TASK prevTempTask;
 	
@@ -523,46 +536,49 @@ EventTaskToWait()
 */
 P_TASK  EventTaskToWait(OS_ID eventID,OS_ID eventType,U8 eventSortType,P_TASK eventTaskList)
 {
+	if(eventType != EVENT_TYPE_FLAG)
+	{
 		TaskRunning->eventID 		= eventID;
-		TaskRunning->eventType		= eventType;
-		TaskRunning->state			= TASK_WAITING;
-		if(eventTaskList == Ur_NULL)
+	}
+	TaskRunning->eventType		= eventType;
+	TaskRunning->state			= TASK_WAITING;
+	if(eventTaskList == Ur_NULL)
+	{
+		return TaskRunning;
+	}
+	P_TASK tempTask = eventTaskList;
+	// Sort by FIFO
+	if( eventSortType == EVENT_SORT_TYPE_FIFO )
+	{
+		while(tempTask->nextWaiting)
 		{
+			tempTask = tempTask->nextWaiting;
+		}
+		tempTask->nextWaiting = TaskRunning;
+		
+		return eventTaskList;
+	}
+	// Sort by Priority
+	if( eventSortType == EVENT_SORT_TYPE_PRIO )
+	{
+		if( TaskRunning->prio < eventTaskList->prio )
+		{
+			TaskRunning->nextWaiting = eventTaskList;
 			return TaskRunning;
 		}
-		P_TASK tempTask = eventTaskList;
-		// Sort by FIFO
-		if( eventSortType == EVENT_SORT_TYPE_FIFO )
+		while(tempTask->nextWaiting)
 		{
-			while(tempTask->nextWaiting)
-			{
-				tempTask = tempTask->nextWaiting;
-			}
-			tempTask->nextWaiting = TaskRunning;
-			
-			return eventTaskList;
+			if( TaskRunning->prio < tempTask->nextWaiting->prio )
+				break;
 		}
-		// Sort by Priority
-		if( eventSortType == EVENT_SORT_TYPE_PRIO )
+		if(tempTask->nextWaiting != Ur_NULL)
 		{
-			if( TaskRunning->prio < eventTaskList->prio )
-			{
-				TaskRunning->nextWaiting = eventTaskList;
-				return TaskRunning;
-			}
-			while(tempTask->nextWaiting)
-			{
-				if( TaskRunning->prio < tempTask->nextWaiting->prio )
-					break;
-			}
-			if(tempTask->nextWaiting != Ur_NULL)
-			{
-				TaskRunning->nextWaiting = tempTask->nextWaiting;
-			}
-			tempTask->nextWaiting = TaskRunning;
-			return eventTaskList;
+			TaskRunning->nextWaiting = tempTask->nextWaiting;
 		}
-		
+		tempTask->nextWaiting = TaskRunning;
+		return eventTaskList;
+	}
+	
 }
 
 P_TASK  EventTaskAwake(P_TASK eventTaskList)
@@ -585,7 +601,7 @@ void UrTaskTimeDispose(void)     /*!< Time dispose function.               */
 		if(tempTask->wakeTick == INVALID_TICK)
 			break;
 		
-		if(getCoreTick() < tempTask->wakeTick)
+		if(UrGetOSTickCnt() < tempTask->wakeTick)
 			break;
 		
 		// Delay Task Finish , Resume Task.
@@ -622,6 +638,7 @@ UrTaskLock();
 	{
 		printh((U32)RdyList);
 		RdyList = RdyList->Tasknext;
+		for(int i=0;i<1000;i++){}
 	}
 	println("");
 UrTaskUnlock();
@@ -639,6 +656,7 @@ UrTaskLock();
 	{
 		printh((U32)DlyList);
 		DlyList = DlyList->Tasknext;
+		for(int i=0;i<1000;i++){}
 	}
 	println("");
 UrTaskUnlock();
@@ -654,6 +672,7 @@ UrTaskLock();
 	{
 		printh((U32)WaitList);
 		WaitList = WaitList->nextWaiting;
+		for(int i=0;i<1000;i++){}
 	}
 	println("");
 UrTaskUnlock();

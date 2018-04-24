@@ -19,9 +19,9 @@ extern "C" {
 #define CFG_DEBUG_EN              			(1)
 #define CFG_SEM_EN              			(1)
 #define CFG_MUTEX_EN              			(1)
-#define CFG_QUEUE_EN              			(0)
-#define CFG_MAILBOX_EN              		(0)
-#define CFG_FLAG_EN  	            		(0)
+#define CFG_MAILBOX_EN              		(1)
+#define CFG_FLAG_EN  	            		(1)
+
 
 // Structure Size
 #define SHARED_SIZE_HEAP 					0x08000
@@ -29,9 +29,8 @@ extern "C" {
 #define SHARED_SIZE_PTASK					(sizeof(P_TASK))
 #define SHARED_SIZE_SEM						(sizeof(SEM))
 #define SHARED_SIZE_MUTEX					(sizeof(MUTEX))
-#define SHARED_SIZE_QUEUE					(sizeof(QUEUE))
 #define SHARED_SIZE_MAILBOX					(sizeof(MAILBOX))
-#define SHARED_SIZE_FLAG					(sizeof(FLAG))
+#define SHARED_SIZE_FLAG					(sizeof(FlagNode))
 
 // Structure List Size
 #define CFG_MAX_TASK 						(10)
@@ -48,12 +47,6 @@ extern "C" {
 	#define CFG_MAX_MUTEX 					(0)
 #endif
 
-#if CFG_QUEUE_EN >0
-	#define CFG_MAX_QUEUE 					(5)
-#else
-	#define CFG_MAX_QUEUE 					(0)
-#endif
-
 #if CFG_MAILBOX_EN >0
 	#define CFG_MAX_MAILBOX 				(15)
 #else
@@ -61,7 +54,7 @@ extern "C" {
 #endif
 
 #if CFG_FLAG_EN >0
-	#define CFG_MAX_FLAG 					(5)
+	#define CFG_MAX_FLAG 					(32)
 #else
 	#define CFG_MAX_FLAG 					(0)
 #endif
@@ -93,10 +86,7 @@ OS_DEF_END 			0x48BD0
 #define SHARED_BASE							(0x38004)	
 #define SHARED_BASE_CPUFLAG					SHARED_BASE								// 4  bit 0x38000
 
-#define SHARED_BASE_CORE0TICK				(SHARED_BASE 					+ 4)
-#define SHARED_BASE_CORE1TICK				(SHARED_BASE_CORE0TICK 			+ 8)
-
-#define SHARED_BASE_LOCK 					(SHARED_BASE_CORE1TICK			+ 8	)	// 32 bit 0x38004
+#define SHARED_BASE_LOCK 					(SHARED_BASE_CPUFLAG			+ 4	)	// 32 bit 0x38004
 #define SHARED_BASE_TASK					(SHARED_BASE_LOCK				+ 4	)	// 0x38008
 #define SHARED_BASE_TASKRDY					(SHARED_BASE_TASK 				+ (SHARED_SIZE_TASK		* CFG_MAX_TASK)		)
 #define SHARED_BASE_TASKRDY_PRIO_HEAD		(SHARED_BASE_TASKRDY			+ SHARED_SIZE_PTASK							)
@@ -104,10 +94,12 @@ OS_DEF_END 			0x48BD0
 #define SHARED_BASE_TASKDLY					(SHARED_BASE_TASKRDY_PRIO_END	+ (SHARED_SIZE_PTASK	* 256)				)
 #define SHARED_BASE_SEM						(SHARED_BASE_TASKDLY			+ SHARED_SIZE_PTASK							)
 #define SHARED_BASE_MUTEX					(SHARED_BASE_SEM 				+ (SHARED_SIZE_SEM		* CFG_MAX_SEM)		)
-#define SHARED_BASE_QUEUE					(SHARED_BASE_MUTEX 				+ (SHARED_SIZE_MUTEX	* CFG_MAX_MUTEX)	)
-#define SHARED_BASE_MAILBOX					(SHARED_BASE_QUEUE 				+ (SHARED_SIZE_QUEUE	* CFG_MAX_QUEUE)	)
+#define SHARED_BASE_MAILBOX					(SHARED_BASE_MUTEX 				+ (SHARED_SIZE_MUTEX	* CFG_MAX_MUTEX)	)
 #define SHARED_BASE_FLAG					(SHARED_BASE_MAILBOX 			+ (SHARED_SIZE_MAILBOX	* CFG_MAX_MAILBOX)	)
-#define SHARED_BASE_HEAP					(SHARED_BASE_FLAG				+ (SHARED_SIZE_FLAG		* CFG_MAX_FLAG)		)
+#define SHARED_BASE_FLAG_ACTIVE				(SHARED_BASE_FLAG				+ (SHARED_SIZE_FLAG		* CFG_MAX_FLAG)		)
+#define SHARED_BASE_FLAG_READY				(SHARED_BASE_FLAG_ACTIVE		+ 4 )
+#define SHARED_BASE_FLAG_NODELIST			(SHARED_BASE_FLAG_READY			+ 4 )
+#define SHARED_BASE_HEAP					(SHARED_BASE_FLAG_NODELIST		+ 4 )
 
 #define SHARED_OS_DEF_END					(SHARED_BASE_HEAP 				+ SHARED_SIZE_HEAP							)
 

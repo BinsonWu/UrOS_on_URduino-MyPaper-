@@ -27,7 +27,6 @@ extern "C" {
 #include "UrSem.h"
 #include "UrMutex.h"
 #include "UrMailBox.h"
-#include "UrQueue.h"
 #include "UrFlag.h"
 #include "UrDebug.h"
 

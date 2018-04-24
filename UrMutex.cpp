@@ -12,7 +12,16 @@
 
 #if CFG_MUTEX_EN > 0
 
-P_MUTEX getMutexByID(OS_ID mutexID)
+/*
+					< UrMutex Architecture >
+---------------------------------------------------------------
+- Mutex Array
+	Length : CFG_MAX_MUTEX
+	|  0  | , |  1  | , ... , |  CFG_MAX_MUTEX-1  |
+*/
+
+
+P_MUTEX UrGetMutexByID(OS_ID mutexID)
 {
 	if(mutexID >= CFG_MAX_MUTEX)
 		return Ur_NULL;
@@ -29,7 +38,7 @@ void UrInitMutex()
 	int i;
 	for(i=0;i<CFG_MAX_MUTEX;i++)
 	{
-		tempMutex = getMutexByID(i);
+		tempMutex = UrGetMutexByID(i);
 		tempMutex->id 				= INVALID_ID;
 		tempMutex->ownTaskID		= INVALID_ID;
 		tempMutex->flag				= MUTEX_FREE;                 	/*!< Mutex flag.                      */
@@ -45,29 +54,34 @@ UrSchedLock();
 	OS_ID i;
 	for(i=0;i<CFG_MAX_SEM;i++)
 	{
-		tempMutex = getMutexByID(i);
-UrAcquire(&tempMutex->lock);
+		tempMutex = UrGetMutexByID(i);
 		if(tempMutex->id == INVALID_ID)
 		{
 			tempMutex->id = i;
 UrSchedUnlock();
-UrRelease(&tempMutex->lock);
 			return i;						/* Return mutex ID                    */
 		}
-UrRelease(&tempMutex->lock);
 	}
 UrSchedUnlock();
 	return E_CREATE_FAIL;               	/* No free mutex control block        */
 }
 
-
-OS_ID UrDeleteMutex(OS_ID mutexID,U8 opt)
+/*
+UrDeleteMutex()
+------------------------------------------------------------
+1. Delete when No Task Pend the Event.
+	- Pend , return error.
+2. Remove Task From Event
+	- Remove Owner.
+	- Remove All Task on Waitting List, and Insert ro Ready Queue.
+*/
+StatusType UrDeleteMutex(OS_ID mutexID,U8 opt)
 {
 	if(mutexID >= CFG_MAX_MUTEX)
-		return Ur_NULL;
+		return E_INVALID_ID;
 	
 UrSchedLock();
-    P_MUTEX tempMutex = getMutexByID(mutexID);
+    P_MUTEX tempMutex = UrGetMutexByID(mutexID);
 UrAcquire(&tempMutex->lock);
 	if(opt == OPT_DEL_NO_PEND && tempMutex->eventTaskList != Ur_NULL )
 	{
@@ -76,7 +90,12 @@ UrSchedUnlock();
 		return E_TASK_WAITING;
 	}
 UrTaskLock();
-	P_TASK tempTask = tempMutex->eventTaskList;
+	// Set the Owner Task
+	P_TASK tempTask 	= UrGetTaskByID(tempMutex->ownTaskID);
+	tempTask->eventID	= INVALID_ID;
+	tempTask->eventType = INVALID_TYPE;
+	// Set Waitting List
+	tempTask = tempMutex->eventTaskList;
 	while( tempTask != Ur_NULL)
 	{
 		UrInsertToTaskRdyList(tempTask);						// Add to Ready Queue
@@ -89,6 +108,7 @@ UrTaskUnlock();
 	tempMutex->eventTaskList	= Ur_NULL;              		/*!< waitting the Mutex.              */
 UrRelease(&tempMutex->lock);
 UrSchedUnlock();
+	return E_OK;
 }
 
 /*
@@ -112,13 +132,16 @@ StatusType UrEnterMutexSection(OS_ID mutexID)
     }
 
 UrSchedLock();
-	P_TASK tempTask;
     P_MUTEX tempMutex;
-    tempMutex  = getMutexByID(mutexID);
+    tempMutex  = UrGetMutexByID(mutexID);
 UrAcquire(&tempMutex->lock);
     if(tempMutex->flag == MUTEX_FREE)       					/* If mutex is available        		*/
     {
-		tempMutex->ownTaskID = TaskRunning->taskID;
+		// Set the Owner
+		TaskRunning->eventID	= mutexID;
+		TaskRunning->eventType	= EVENT_TYPE_MUTEX;
+		// Set Mutex
+		tempMutex->ownTaskID 	= TaskRunning->taskID;
         tempMutex->flag    		= MUTEX_OCCUPY;      			/* Occupy the mutex resource			*/
     }
     /* If the mutex resource had been occupied                                */
@@ -143,6 +166,11 @@ No Change || TASK_WAITING -> TASK_Ready
 */
 StatusType UrLeaveMutexSection(OS_ID mutexID)
 {
+	if(OSSchedLock != 0)                /* Is OS lock?                        	*/
+    {
+        return E_OS_IN_LOCK;            /* Yes,error return.                   	*/
+    }
+	
 	if(mutexID >= CFG_MAX_MUTEX)          				/* Invalid 'mutexID'                  		*/
     {
         return E_INVALID_ID;
@@ -151,7 +179,7 @@ StatusType UrLeaveMutexSection(OS_ID mutexID)
 	P_TASK tempTask;
     P_MUTEX tempMutex;
 UrSchedLock();
-    tempMutex  = getMutexByID(mutexID);
+    tempMutex  = UrGetMutexByID(mutexID);
 UrAcquire(&tempMutex->lock);
 
 	if(tempMutex->ownTaskID != TaskRunning->taskID)		/* Not Exit Critical Section in same Task.	*/
@@ -161,6 +189,11 @@ UrSchedUnlock();
 		return E_MUTEX_DIF_SECTION;
 	}
 	
+	// Remove Owner
+	TaskRunning->eventID	= INVALID_ID;
+	TaskRunning->eventType	= INVALID_TYPE;
+	
+	// Set Next Owner
     if(tempMutex->eventTaskList == Ur_NULL)
 	{
 		tempMutex->flag 		= MUTEX_FREE;
@@ -170,8 +203,10 @@ UrSchedUnlock();
 	{
 UrTaskLock();
 		tempMutex->ownTaskID = tempMutex->eventTaskList->taskID;
-		UrInsertToTaskRdyList(tempMutex->eventTaskList);							// Add to Ready Queue
+		TaskWakeUp = tempMutex->eventTaskList;
 		tempMutex->eventTaskList  = EventTaskAwake(tempMutex->eventTaskList);		// Set New EventTaskList
+		// Because of Post , we need to schedule the Task waked up.
+    	TaskSchedReq = Ur_TRUE;
 UrTaskUnlock();
 	}
 UrRelease(&tempMutex->lock);
@@ -181,7 +216,7 @@ UrSchedUnlock();
 
 void UrRemoveTaskFromMutexWaiting(P_TASK removeTask)
 {
-	P_MUTEX tempMutex = getMutexByID(removeTask->eventID);
+	P_MUTEX tempMutex = UrGetMutexByID(removeTask->eventID);
 UrAcquire(&tempMutex->lock);
 UrTaskLock();
 	P_TASK tempWaitTask = tempMutex->eventTaskList;

@@ -11,7 +11,15 @@
 
 #if CFG_SEM_EN > 0
 
-P_SEM getSemByID(OS_ID semID)
+/*
+					< UrSem Architecture >
+---------------------------------------------------------------
+- Sem Array
+	Length : CFG_MAX_SEM
+	|  0  | , |  1  | , ... , |  CFG_MAX_SEM-1  |
+*/
+
+P_SEM UrGetSemByID(OS_ID semID)
 {
 	if(semID >= CFG_MAX_SEM)
 		return Ur_NULL;
@@ -28,9 +36,9 @@ void UrInitSem()
 	OS_ID i;
 	for(i=0;i<CFG_MAX_SEM;i++)
 	{
-		tempSem = getSemByID(i);
+		tempSem = UrGetSemByID(i);
 		tempSem->id 					= INVALID_ID;        	/*!< Sem id                           */
-		tempSem->eventSortType 			= EVENT_SORT_TYPE_FIFO; /*!< 0:FIFO 1: Preemptive by prio     */
+		tempSem->eventSortType 			= EVENT_SORT_TYPE_FIFO; /*!< 1:FIFO 2: Preemptive by prio     */
 		tempSem->eventCounter 			= 0;               		/*!< Counter of semaphore.            */
 		tempSem->eventTaskList 			= Ur_NULL;          	/*!< Task waitting list.              */
 		UrRelease(&tempSem->lock);
@@ -44,44 +52,51 @@ OS_ID UrCreateSem(U32 initCount,U8 sortType)
 UrSchedLock();
 	for(i=0;i<CFG_MAX_SEM;i++)
 	{
-		tempSem = getSemByID(i);
-UrAcquire(&tempSem->lock);
+		tempSem = UrGetSemByID(i);
 		if(tempSem->id == INVALID_ID)
 		{
 			tempSem->id 			= i;
 			tempSem->eventSortType	= sortType;
 			tempSem->eventCounter	= initCount;
-UrRelease(&tempSem->lock);
 UrSchedUnlock();
 			return i;                      /* Return mutex ID                    */
 		}
-UrRelease(&tempSem->lock);
 	}
 UrSchedUnlock();
 	return E_CREATE_FAIL;               /* No free mutex control block        */
 }
 
+/*
+UrDelSem()
+------------------------------------------------------------
+1. Delete No Task Pend on Waitting List.
+	- Pend , return error.
+2. Set Sem.
+3. Remove Event Waitting List.
+*/
 StatusType UrDelSem(OS_ID semID,U8 opt)
 {
     if(semID >= CFG_MAX_SEM)				/* Is Sem ID actualy?                   */
     {
-        return E_INVALID_ID;			/* No,error return.						*/
+        return E_INVALID_ID;				/* No,error return.						*/
     }
 	
 UrSchedLock();
-    P_SEM tempSem = getSemByID(semID);
+    P_SEM tempSem = UrGetSemByID(semID);
 UrAcquire(&tempSem->lock);
-
+	
+	// - Pend , return error.
 	if(opt == OPT_DEL_NO_PEND && tempSem->eventTaskList != Ur_NULL )
 	{
 UrRelease(&tempSem->lock);
 UrSchedUnlock();
 		return E_TASK_WAITING;
 	}
-	
+	// 2. Set Sem.
     tempSem->id 					= INVALID_ID;			/*!< Sem id                           */
 	tempSem->eventSortType 			= 0;            		/*!< 0:FIFO 1: Preemptive by prio     */
 	tempSem->eventCounter 			= 0;               		/*!< Counter of semaphore.            */
+	// 3. Remove Event Waitting List.
 UrTaskLock();
 	P_TASK tempTask = tempSem->eventTaskList;
 	while( tempTask != Ur_NULL)
@@ -121,7 +136,7 @@ StatusType UrPostSem(OS_ID semID)
     }
 UrSchedLock();
 UrTaskLock();
-	P_SEM tempSem = getSemByID(semID);
+	P_SEM tempSem = UrGetSemByID(semID);
 UrAcquire(&tempSem->lock);
 	if(tempSem->eventTaskList == Ur_NULL)
 	{
@@ -134,9 +149,10 @@ UrAcquire(&tempSem->lock);
 		{
 			RemoveFromTaskDlyList(tempSem->eventTaskList);						// Waiting -> Ready
 		}
-		UrInsertToTaskRdyList(tempSem->eventTaskList);							// Add to Ready Queue
-		
+		TaskWakeUp = tempSem->eventTaskList;
 		tempSem->eventTaskList  = EventTaskAwake(tempSem->eventTaskList);		// Set New EventTaskList
+		// Because of Post , we need to schedule the Task waked up.
+    	TaskSchedReq = Ur_TRUE;
 	}
 UrRelease(&tempSem->lock);
 UrTaskUnlock();
@@ -164,41 +180,43 @@ StatusType UrPendSem(OS_ID semID,int timeout)
         return E_INVALID_ID;			/* No,error return.						*/
     }
 UrSchedLock();
-    P_SEM tempSem = getSemByID(semID);
+    P_SEM tempSem = UrGetSemByID(semID);
 UrAcquire(&tempSem->lock);
     if(tempSem->eventCounter > 0) 		/* If semaphore is positive,resource available 	*/
     {
     	tempSem->eventCounter--;		/* Decrement semaphore only if positive 		*/
+UrRelease(&tempSem->lock);
+UrSchedUnlock();
 		return E_OK;
     }
-    else                                /* Resource is not available          			*/
-    {            						/* Block task until event or timeout occurs 	*/
-		if(timeout == 0)
-		{
+    /* Resource is not available          			*/
+    /* Block task until event or timeout occurs 	*/
+	if(timeout == 0)
+	{
 UrRelease(&tempSem->lock);
 UrSchedUnlock();
-			return E_SEM_EMPTY;
-		}
+		return E_SEM_EMPTY;
+	}
 UrTaskLock();
-		if(timeout != OPT_WAIT_FOREVER)
-		{
-			// Task State : Running -> Waiting , So only need insert to Delay List.
-			InsertToTaskDlyList(timeout);	// Running -> Waiting
-		}
-    	// Set New EventTaskList
-    	tempSem->eventTaskList = EventTaskToWait(tempSem->id,EVENT_TYPE_SEM,tempSem->eventSortType,tempSem->eventTaskList);
-    	// Because of Pending , we need to schedule until it getting a post.
-    	TaskSchedReq = Ur_TRUE;
+	if(timeout != OPT_WAIT_FOREVER)
+	{
+		// Task State : Running -> Waiting , So only need insert to Delay List.
+		InsertToTaskDlyList(timeout);	// Running -> Waiting
+	}
+	// Set New EventTaskList
+	tempSem->eventTaskList = EventTaskToWait(tempSem->id,EVENT_TYPE_SEM,tempSem->eventSortType,tempSem->eventTaskList);
+	// Because of Pending , we need to schedule until it getting a post.
+	TaskSchedReq = Ur_TRUE;
 UrTaskUnlock();
-    }
 UrRelease(&tempSem->lock);
 UrSchedUnlock();
+
     return E_OK;
 }
 
 void UrRemoveTaskFromSemWaiting(P_TASK removeTask)
 {
-	P_SEM tempSem = getSemByID(removeTask->eventID);
+	P_SEM tempSem = UrGetSemByID(removeTask->eventID);
 UrAcquire(&tempSem->lock);
 UrTaskLock();
 	P_TASK tempWaitTask = tempSem->eventTaskList;

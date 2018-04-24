@@ -36,9 +36,9 @@ typedef struct FreeMemBlk
 }FMB,*P_FMB;
 
 /*---------------------------- Function Declare ------------------------------*/
-extern void   UrInitKHeap(void);
-extern void* UrKMalloc(U32);
-extern void   UrKFree(void*);
+extern void   	UrInitKHeap(void);
+extern void* 	UrKMalloc(U32);
+extern void   	UrKFree(void*);
 
 #ifdef __cplusplus
 }

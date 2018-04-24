@@ -13,13 +13,11 @@ extern "C" {
 #endif
 
 #include "UrOS.h"
-
-extern volatile U64 OSTickCnt;          	/*!< Counter for current system ticks.    	*/
-extern volatile U64 OSScheduleTime;		/*!< When to Schedule 						*/
-
 /*!< Initial context of task being created	*/
-extern U64 getCoreTick();
-extern void setCoreTick(U64 TickCount);
+extern void 	UrSetOSTickCnt(U64 newOSTickCnt);
+extern U64 		UrGetOSTickCnt();
+extern void 	UrSetOSScheduleTime(U64 newOSScheduleTime);
+extern U64 		UrGetOSScheduleTime();
 
 extern void 	UrDisableInterrupts();
 extern S32 		UrStartSchedule();

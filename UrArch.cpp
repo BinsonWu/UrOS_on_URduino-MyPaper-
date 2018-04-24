@@ -15,32 +15,24 @@
 volatile U64 OSTickCnt = 0;          	/*!< Counter for current system ticks.    	*/
 volatile U64 OSScheduleTime = 0;		/*!< When to Schedule 						*/
 
-U64 getCoreTick()
+void UrSetOSTickCnt(U64 newOSTickCnt)
 {
-	U64 *p;
-	if(core_id == 0)
-	{
-		p = SHARED_BASE_CORE0TICK;
-	}
-	if(core_id == 1)
-	{
-		p = SHARED_BASE_CORE1TICK;
-	}
-	return *p;
+	OSTickCnt = newOSTickCnt;
 }
 
-void setCoreTick(U64 TickCount)
+U64 UrGetOSTickCnt()
 {
-	U64 *p;
-	if(core_id == 0)
-	{
-		p = SHARED_BASE_CORE0TICK;
-	}
-	if(core_id == 1)
-	{
-		p = SHARED_BASE_CORE1TICK;
-	}
-	*p = TickCount;
+	return OSTickCnt;
+}
+
+void UrSetOSScheduleTime(U64 newOSScheduleTime)
+{
+	OSScheduleTime = newOSScheduleTime;
+}
+
+U64 UrGetOSScheduleTime()
+{
+	return OSScheduleTime;
 }
 
 void UrDisableInterrupts()
@@ -50,7 +42,6 @@ void UrDisableInterrupts()
 
 S32 UrStartSchedule()
 {
-	setCoreTick((U64)0);
 	OSTickCnt = 0;
 	return xPortStartScheduler();
 }
@@ -63,9 +54,10 @@ OS_STK  *UrInitTaskContext(FUNCPtr task,void *param,OS_STK *pstk)
 
 void    UrSwitchContext(void)         /*!< Switch context                   */
 {
+	//println("UrSwitchContext");
 	if(OSSchedLock > 0)
 		return;
-	while( UrGetCoreFlag() != core_id ){}
+	//while( UrGetCoreFlag() != core_id ){}
 UrSchedLock();
 UrTaskLock();
 	// Get Next Task
@@ -78,26 +70,31 @@ UrSchedUnlock();
 			return;
 	}
 	
-	/*if(getCoreTick()%100 == 0)
+	// If any Task is waked up by Event.
+	if(TaskWakeUp != Ur_NULL)
 	{
-		print("tc=");
-		print(getCoreTick());
-		println("");
-	}*/
-	
+		//println("TaskWakeUp");
+		TaskWakeUp->state 	= TASK_RUNNING;
+		UrInsertToTaskRdyList(TaskRunning);
+		// Set New Task
+		TaskRunning 		= TaskWakeUp;
+		// Set New OSScheduleTime
+		OSScheduleTime 		= OSTickCnt + TaskRunning->timeSlice;
+		TaskWakeUp = Ur_NULL;
+	}
 	// If TaskRunning is TASK_WAITING ( Not TASK_RUNNING )
-	if(TaskRunning->state != TASK_RUNNING)
+	else if(TaskRunning->state != TASK_RUNNING)
 	{
-		print("wt=");
+		/*print("wt=");
 		print(TaskRunning->wakeTick);
-		println("");
+		println("");*/
 		// Disconnect Next Task From Ready List
 		RemoveFromTaskRdyList(newTask);
 		newTask->state 	= TASK_RUNNING;
 		// Set New Task
 		TaskRunning 	= newTask;
 		// Set New OSScheduleTime
-		OSScheduleTime = getCoreTick() + newTask->timeSlice;
+		OSScheduleTime = OSTickCnt + newTask->timeSlice;
 		/*print("st=");
 		print(OSScheduleTime);
 		println("");*/
@@ -118,10 +115,10 @@ UrSchedUnlock();
 		// Set New Task
 		TaskRunning 	= newTask;
 		// Set New OSScheduleTime
-		OSScheduleTime = getCoreTick() + newTask->timeSlice;
+		OSScheduleTime = OSTickCnt + newTask->timeSlice;
 	}
 	// Round Robin
-	else if( newTask->prio == TaskRunning->prio && getCoreTick() >= OSScheduleTime )
+	else if( newTask->prio == TaskRunning->prio && OSTickCnt >= OSScheduleTime )
 	{
 		/*println("3");
 		print(TaskRunning->taskID);
@@ -136,22 +133,17 @@ UrSchedUnlock();
 		// Set New Task
 		TaskRunning 	= newTask;
 		// Set New OSScheduleTime
-		OSScheduleTime = getCoreTick() + newTask->timeSlice;
+		OSScheduleTime = OSTickCnt + newTask->timeSlice;
 	}
 UrTaskUnlock();
 UrSchedUnlock();
 	UrSetCoreFlag( (UrGetCoreFlag()+1) % CORE_NUM );
-	if(core_id == 0)
-	{
-		while( UrGetCoreFlag() != core_id ){}
-	}
 }
 
 void    UrTimeDispose(void)     /*!< Time dispose function.               */
 {
 UrSchedLock();
 UrTaskLock();
-	setCoreTick( getCoreTick()+1 );
 	OSTickCnt++;
 	UrTaskTimeDispose();
 UrTaskUnlock();
@@ -160,7 +152,7 @@ UrSchedUnlock();
 
 void  UrSchedule(void)
 {
-	// mtspr(SPR_TTMR, mfspr(SPR_TTMR) & ~(SPR_TTMR_IP));
+	UrDisableInterrupts();
 	asm(
 		"l.jal UrSchedule_ASM;"
 		"l.nop;"

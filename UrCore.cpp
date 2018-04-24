@@ -15,6 +15,16 @@ volatile int core_id = -1;
 /*---------------------------- Variable Define -------------------------------*/
 volatile U8 OSSchedLock   = 1;         /*!< Task Switch lock.                      */
 
+void UrSetCoreID(int id)
+{
+	core_id = id;
+}
+
+int  UrGetCoreID()
+{
+	return core_id;
+}
+
 void UrSetCoreFlag(U32 nextCPU)
 {
 	U32 *p = SHARED_BASE_CPUFLAG;
@@ -40,7 +50,7 @@ void UrSchedUnlock(void)
 	if(TaskSchedReq == Ur_TRUE)
 	{
 		TaskSchedReq = Ur_FALSE;
-		while(TaskRunning->state != TASK_RUNNING){}
+		//while(TaskRunning->state != TASK_RUNNING){}
 		//UrSchedule();
 	}
 }
@@ -68,8 +78,6 @@ void printSharedBase(void)
 	printh((U32)SHARED_BASE_SEM);
 	print("MUTEX \t\t\t\t");
 	printh((U32)SHARED_BASE_MUTEX);
-	print("QUEUE \t\t\t\t");
-	printh((U32)SHARED_BASE_QUEUE);
 	print("MAILBOX \t\t\t\t");
 	printh((U32)SHARED_BASE_MAILBOX);
 	print("FLAG \t\t\t\t");
@@ -85,7 +93,6 @@ void printSharedBase(void)
 void UrConfigureSharedInit(void)
 {
 	println(">> UrConfigureSharedInit");
-	//printSharedBase();
 	
 	println("< -------------- Init Configure -------------- >");
 	U32 *p 	= SHARED_BASE_CPUFLAG;
@@ -135,7 +142,6 @@ void UrInitOS(void)
 {
 	println(">> UrInitOS");
 	println("");
-	core_id = 0;
 	UrConfigureSharedInit();
 	UrInitTask();
 
@@ -144,9 +150,6 @@ void UrInitOS(void)
 #endif
 #if CFG_MUTEX_EN >0
 	UrInitMutex();
-#endif
-#if CFG_QUEUE_EN >0
-	UrInitQueue();
 #endif
 #if CFG_MAILBOX_EN >0
 	UrInitMailBox();
@@ -169,7 +172,7 @@ void UrStartOS(void)
 	// When Core Flag is Set to 1,then Core 1 do.
 	UrDisableInterrupts();
 	
-	while( UrGetCoreFlag() != core_id ){}
+	//while( UrGetCoreFlag() != core_id ){}
 	
 UrTaskLock();
 	P_TASK newTask 	= getTaskRdy();
@@ -181,7 +184,10 @@ UrTaskUnlock();
 	RemoveFromTaskRdyList(newTask);
 	newTask->state 	= TASK_RUNNING;
 	TaskRunning 	= newTask;
-	OSScheduleTime 	= TaskRunning->timeSlice;
+	UrSetOSScheduleTime(TaskRunning->timeSlice);
+	/*print("st=");
+	print(OSScheduleTime);
+	println("");*/
 UrTaskUnlock();
 	
 	if(core_id == 0)

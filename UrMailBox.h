@@ -15,23 +15,22 @@ extern "C" {
 // MailBox
 typedef struct MailBox
 {
-	U8   			Message[CFG_MSG_SIZE];                   	/*!< Point to mailbox or queue struct */
-    U8      		id;                         									/*!< ECB id                           */
-    U8      		eventSortType:4;            							/*!< 0:FIFO 1: Preemptive by prio     */
-    U16     		eventCounter;               							/*!< Counter of semaphore.            */
-    U16     		initialEventCounter;       						/*!< Initial counter of semaphore.    */
-    P_TASK 	eventTaskList;               							/*!< Task waitting list.              */
+	char   			Message[CFG_MSG_SIZE];                   		/*!< Point to mailbox or queue struct */
+    U8      		id;                         					/*!< Event id                         */
+    U8      		eventSortType:4;            					/*!< 1:FIFO 2: Preemptive by prio     */
+    P_TASK 			eventTaskList;               					/*!< Task waitting list.              */
+	SPINLOCK		lock;
 }MAILBOX,*P_MAILBOX;
 
 /*---------------------------- Function declare ------------------------------*/
-extern void UrMailBoxLock();
-extern void UrMailBoxUnlock();
-extern P_MAILBOX getMailBoxByID(OS_ID id);
-extern void UrInitMailBox();
-extern OS_ID UrCreateMailBox();
-extern StatusType UrDelMailBox(OS_ID id);
-extern StatusType setMessage(OS_ID id,U8 *Message);
-extern StatusType getMessage(OS_ID id,U8 *Message);
+
+extern P_MAILBOX 	UrGetMailBoxByID(OS_ID mailboxID);
+extern void 		UrInitMailBox();
+extern OS_ID 		UrCreateMailBox(U8 sortType);
+extern StatusType 	UrDelMailBox(OS_ID mailboxID,U8 opt);
+extern StatusType 	UrPostMailBox(OS_ID mailboxID,char *Message);
+extern StatusType 	UrPendMailBox(OS_ID mailboxID,char *Message,int timeout);
+extern void 		UrRemoveTaskFromMailboxWaiting(P_TASK removeTask);
 
 #ifdef __cplusplus
 }

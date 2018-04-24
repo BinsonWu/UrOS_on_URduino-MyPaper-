@@ -24,9 +24,8 @@ typedef struct Mutex
 }MUTEX,*P_MUTEX;
 
 /*---------------------------- Function declare ------------------------------*/
-extern void   RemoveMutexList(P_TASK ptcb);
 
-extern P_MUTEX 		getMutexByID(OS_ID mutexID);
+extern P_MUTEX 		UrGetMutexByID(OS_ID mutexID);
 extern void 		UrInitMutex();
 extern OS_ID 		UrCreateMutex();
 extern StatusType 	UrDeleteMutex(OS_ID mutexID,U8 opt);

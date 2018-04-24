@@ -12,12 +12,12 @@
 extern "C" {
 #endif
 
-extern volatile int core_id;
 extern volatile U8 OSSchedLock;
 
+extern void 	UrSetCoreID(int nextCPU);
+extern int  	UrGetCoreID();
 extern void 	UrSetCoreFlag(U32 nextCPU);
 extern U32  	UrGetCoreFlag();
-
 
 extern void 	UrSchedUnlock(void);
 extern void 	UrSchedLock(void);

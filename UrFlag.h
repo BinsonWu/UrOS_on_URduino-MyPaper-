@@ -14,27 +14,30 @@ extern "C" {
 
 typedef struct FlagNode
 {
-    struct FlagNode*  nextNode;         /*!< A pointer to next flag node      */
-    struct FlagNode*  prevNode;         /*!< A pointer to prev flag node      */
-    U32               waitFlags;        /*!< Flag value                       */
-    P_TASK           waitTask;         /*!< A pointer to task waitting flag  */
-    U8                waitType;         /*!< Wait type                        */
+	OS_ID				id;
+    U32               	waitFlags;        /*!< Flag value                       */
+    P_TASK				waitTask;         /*!< A pointer to task waitting flag  */
+    U8                	waitType;         /*!< Wait type                        */
+	struct FlagNode*  	nextNode;         /*!< A pointer to next flag node      */
+	struct FlagNode*  	prevNode;         /*!< A pointer to prev flag node      */
 }FLAG_NODE,*P_FLAG_NODE;
 
+extern U32 UrGetFlagActive();
+extern U32 UrGetFlagReady();
+extern void UrSetFlagActive(U32 newActive);
+extern void UrSetFlagReady(U32 newReady);
 
-/**
- * @struct  Flag    flag.h
- * @brief   Flag control block
- * @details This struct use to mange event flag.
- */
-typedef struct Flag
-{
-    U32           flagRdy;              /*!< Ready flag                       */
-    U32           resetOpt;             /*!< Reset option                     */
-    U32           flagActive;           /*!< Active flag                      */
-    P_FLAG_NODE   headNode;             /*!< Head node                        */
-    P_FLAG_NODE   tailNode;             /*!< Tail node                        */
-}FLAG,*P_FLAG;
+extern P_FLAG_NODE UrGetFalgByID(OS_ID flagID);
+
+extern void 		UrInitFlag();
+extern OS_ID 		UrCreateFlag();
+extern StatusType 	UrDelFlag(OS_ID flagID,U8 opt);
+extern StatusType 	UrSetFlag(OS_ID flagID);
+extern StatusType 	UrPendSingleFlag(OS_ID flagID,int timeout);
+extern StatusType	UrPendMutipleFlag(U32 flags,int timeout,U8 waitType);
+extern StatusType 	UrClearFlag(OS_ID flagID);
+extern void 		UrRemoveTaskFromFlagWaiting(P_TASK removeTask);
+extern void printFlagNodeList();
 
 #ifdef __cplusplus
 }
